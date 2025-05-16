@@ -1,0 +1,3 @@
+Add more detection methods (MTCNN, DNN)
+Implement data augmentation - distort/skew training images for diversity
+Research TensorFlow model for face recognition
