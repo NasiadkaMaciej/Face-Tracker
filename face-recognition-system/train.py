@@ -22,6 +22,16 @@ def create_dataset_interactive(dataset_dir, camera_id=0):
     # Create person directory
     person_dir = ensure_dir_exists(dataset_dir / person_name)
     
+    # Find the highest existing image number
+    highest_num = 0
+    for file in person_dir.glob(f"{person_name}_*.jpg"):
+        try:
+            # Extract the number from filename (person_name_X.jpg)
+            num = int(file.stem.split('_')[-1])
+            highest_num = max(highest_num, num)
+        except (ValueError, IndexError):
+            continue
+    
     # Start camera
     camera = USBCamera(device_id=camera_id)
     
@@ -31,13 +41,15 @@ def create_dataset_interactive(dataset_dir, camera_id=0):
     
     # Image capture loop
     images = []
-    count = 0
+    start_count = highest_num  # Start from the highest existing number
+    count = start_count
     max_images = 100
     
+    logger.info(f"Found {start_count} existing images. New images will start from #{start_count+1}")
     logger.info(f"Capturing {max_images} images for {person_name}. Press SPACE to capture, ESC to quit.")
     
     try:
-        while count < max_images:
+        while len(images) < max_images:
             # Get a frame and display it
             frame = camera.get_frame()
             if frame is None:
@@ -56,18 +68,20 @@ def create_dataset_interactive(dataset_dir, camera_id=0):
                 
             # If SPACE pressed, capture the current frame
             if key == 32:  # SPACE key
+                # Increment counter first
+                count += 1
+                
                 # Save the image
-                img_path = person_dir / f"{person_name}_{count+1}.jpg"
+                img_path = person_dir / f"{person_name}_{count}.jpg"
                 cv2.imwrite(str(img_path), frame)
                 images.append(frame.copy())
-                count += 1
-                logger.info(f"Captured image {count}/{max_images}")
+                logger.info(f"Captured image {len(images)}/{max_images} (saved as {img_path.name})")
     finally:
         camera.release()
         cv2.destroyAllWindows()
         
     return person_name, images
-
+	
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Train face recognition model")
