@@ -1,8 +1,10 @@
 import cv2
-import argparse
 import time
+import argparse
+import requests
 import threading
 from pathlib import Path
+import face_recognition  # Add this import
 
 from src.face_detector import FaceDetector
 from src.face_recognizer import FaceRecognizer
@@ -12,14 +14,22 @@ from src.utils import setup_logging
 # Get logger
 logger = setup_logging("recognize")
 
+# ESP32 servo controller URL
+SERVO_URL = "http://192.168.4.1"
+MAX_SPEED = 500
+MIN_SPEED = 42  # Minimum speed to move the servo, depends on the servo
+DEADZONE = 30   # Pixels from center where we don't move the camera
+
+# These values will need adjusting based on camera and distance, lots of testing ahead
+
 def main():
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Face recognition system")
+    parser = argparse.ArgumentParser(description="Face recognition and tracking system")
     parser.add_argument("--detection-method", choices=["hog", "haar"], default="hog",
                         help="Face detection method to use")
     parser.add_argument("--database", help="Path to face recognition database")
-    parser.add_argument("--output", help="Save output video to specified file")
     parser.add_argument("--camera-id", type=int, default=0, help="USB camera device ID (default: 0)")
+    parser.add_argument("--target", default=None, help="Name of person to track (default: None - no specific tracking)")
     args = parser.parse_args()
     
     # Set up USB camera
@@ -35,22 +45,59 @@ def main():
     if not face_recognizer.load_model():
         logger.warning("Could not load face database. Faces will not be recognized.")
     
-    run_recognition_loop(camera, face_detector, face_recognizer)
+    run_tracking_loop(camera, face_detector, face_recognizer, args.target)
 
-def run_recognition_loop(camera, face_detector, face_recognizer):
+def calculate_servo_command(face_center_x, frame_width):
+    """Calculate servo direction and speed based on face position."""
+    # Calculate distance from center
+    frame_center_x = frame_width // 2
+    distance = face_center_x - frame_center_x
+    
+    # Determine if we're in the deadzone (close enough to center)
+    if abs(distance) < DEADZONE:
+        # Return current direction with speed 0 to actually stop the servo
+        direction = "right" if distance >= 0 else "left"
+        return direction, 0
+    
+    # Calculate direction
+    direction = "left" if distance < 0 else "right"
+    
+    # Calculate speed based on distance
+    max_distance = frame_width // 2  # Maximum possible distance from center
+    
+    # Linear scaling between MIN_SPEED and MAX_SPEED based on distance from center
+    normalized_distance = min((abs(distance) - DEADZONE) / (max_distance - DEADZONE), 1.0)
+    speed = int(MIN_SPEED + normalized_distance * (MAX_SPEED - MIN_SPEED))
+    
+    return direction, speed
 
-    logger.info("Starting face recognition. Press 'q' to quit.")
+def control_servo(direction, speed):
+    """Send control command to ESP32 servo controller."""
+    # Modified to handle speed=0 explicitly (stop command)
+    if direction is None:
+        return
     
-    # Track performance
-    frame_count = 0
-    start_time = time.time()
-    fps_update_interval = 5
+    # Always send the command when the speed is 0 (explicit stop)
+    # or when speed is at least MIN_SPEED
+    if speed == 0 or speed >= MIN_SPEED:
+        try:
+            url = f"{SERVO_URL}/rotate?direction={direction}&speed={speed}"
+            requests.get(url, timeout=0.5)
+            logger.info(f"Sent command: direction={direction}, speed={speed}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send servo command: {e}")
+
+def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
+    logger.info(f"Starting tracking system. {'Tracking: ' + target_name if target_name else 'No specific person tracking enabled'}. Press 'q' to quit.")
     
-    # Store last detections
-    last_faces = []
+    # Store last valid face position to reduce jitter
+    last_valid_position = None
     
-    # Control frame rate
-    frame_delay = 1/30  # 15 FPS target
+    # Store recognized faces for display
+    current_faces = []
+    
+    # Store target encoding for comparison with unknown faces
+    target_encoding = None
     
     # Processing thread control
     processing = False
@@ -58,7 +105,7 @@ def run_recognition_loop(camera, face_detector, face_recognizer):
     latest_frame_lock = threading.Lock()
     
     def process_frame():
-        nonlocal processing, latest_frame, last_faces
+        nonlocal processing, latest_frame, last_valid_position, current_faces, target_encoding
         
         try:
             # Grab the latest frame
@@ -67,75 +114,131 @@ def run_recognition_loop(camera, face_detector, face_recognizer):
                     processing = False
                     return
                 frame_to_process = latest_frame.copy()
-                latest_frame = None  # Reset to indicate we've taken this frame
+                frame_width = frame_to_process.shape[1]
+                latest_frame = None
             
-            # Process the frame
+            # Detect and recognize faces
             faces = face_detector.detect_faces(frame_to_process)
             if faces:
-                # Recognize faces
-                faces = face_recognizer.recognize_faces(frame_to_process, faces)
-                last_faces = faces  # Update results
+                recognized_faces = face_recognizer.recognize_faces(frame_to_process, faces)
+                current_faces = recognized_faces  # Update faces for display
+                
+                # If no specific target is set, just display faces without tracking
+                if not target_name:
+                    # Don't send any tracking commands
+                    pass
+                else:
+                    # Original tracking logic when target is specified
+                    target_face = None
+                    unknown_faces = []
+                    
+                    for x, y, w, h, name in recognized_faces:
+                        if name == target_name:
+                            target_face = (x, y, w, h)
+                            
+                            # Store target encoding if not already saved
+                            if target_encoding is None:
+                                face_img = frame_to_process[y:y+h, x:x+w]
+                                rgb_face = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+                                encodings = face_recognition.face_encodings(rgb_face)
+                                if encodings:
+                                    target_encoding = encodings[0]
+                            break
+                        elif name == "Unknown":
+                            # Store unknown faces for potential tracking
+                            unknown_faces.append((x, y, w, h))
+                    
+                    # If target found, track it (highest priority)
+                    if target_face:
+                        x, y, w, h = target_face
+                        face_center_x = x + (w // 2)
+                        last_valid_position = face_center_x
+                        direction, speed = calculate_servo_command(face_center_x, frame_width)
+                        control_servo(direction, speed)
+                        
+                    # If target not found but unknown faces exist
+                    elif unknown_faces:
+                        if len(unknown_faces) == 1:
+                            # Only one unknown face, track it
+                            x, y, w, h = unknown_faces[0]
+                            face_center_x = x + (w // 2)
+                            last_valid_position = face_center_x
+                            direction, speed = calculate_servo_command(face_center_x, frame_width)
+                            control_servo(direction, speed)
+                        else:
+                            # Multiple unknown faces, find the most similar to target
+                            best_match_idx = 0
+                            lowest_distance = float('inf')
+                            
+                            if target_encoding is not None:
+                                # Compare each unknown face with the target encoding
+                                for i, (x, y, w, h) in enumerate(unknown_faces):
+                                    face_img = frame_to_process[y:y+h, x:x+w]
+                                    rgb_face = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+                                    encodings = face_recognition.face_encodings(rgb_face)
+                                    
+                                    if encodings:
+                                        distance = face_recognition.face_distance([target_encoding], encodings[0])[0]
+                                        if distance < lowest_distance:
+                                            lowest_distance = distance
+                                            best_match_idx = i
+                            
+                            # Track the most similar unknown face
+                            x, y, w, h = unknown_faces[best_match_idx]
+                            face_center_x = x + (w // 2)
+                            last_valid_position = face_center_x
+                            direction, speed = calculate_servo_command(face_center_x, frame_width)
+                            control_servo(direction, speed)
+                            
+                    elif last_valid_position:
+                        # No faces detected, continue in the last known direction at reduced speed
+                        direction, speed = calculate_servo_command(last_valid_position, frame_width)
+                        if speed > 0:
+                            speed = min(speed, 100)  # Reduce speed when tracking lost
+                            control_servo(direction, speed)
         finally:
-            # Always mark processing as done when finished
             processing = False
     
     try:
         while True:
-            loop_start = time.time()
-            
-            # Always get frame for smooth video
+            # Get current frame
             frame = camera.get_frame()
             if frame is None:
                 logger.warning("Could not capture frame")
-                break
+                continue
             
-            # Update the latest frame for processing (skips any old frames)
+            # Update the latest frame for processing
             with latest_frame_lock:
                 latest_frame = frame
             
             # Start processing if not already in progress
             if not processing:
                 processing = True
-                processing_thread = threading.Thread(target=process_frame)
-                processing_thread.start()
+                threading.Thread(target=process_frame).start()
             
-            # Always display frame (with most recent detection results)
-            marked_frame = face_recognizer.mark_faces(frame, last_faces) if last_faces else frame
-            
-            # Update fps counter
-            frame_count += 1
-            if frame_count % fps_update_interval == 0:
-                fps = frame_count / (time.time() - start_time)
-                # Print FPS to terminal instead of rendering on frame
-                print(f"\rFPS: {fps:.2f}", end="", flush=True)
-            
-            cv2.imshow('Face Recognition', marked_frame)
+            # Display the frame with marked faces
+            if current_faces:
+                frame = face_recognizer.mark_faces(frame, current_faces)
+            cv2.imshow('Face Recognition', frame)
             
             # Check for exit key
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
                 
-            # Control frame rate to maintain 15 FPS
-            elapsed = time.time() - loop_start
-            sleep_time = max(0, frame_delay - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            # Control frame rate
                 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     except Exception as e:
-        logger.error(f"Error in main loop: {str(e)}")
+        logger.error(f"Error in tracking loop: {str(e)}")
     finally:
-        cleanup(camera, frame_count, start_time)
-        
-def cleanup(camera, frame_count, start_time):
-    camera.release()
-    cv2.destroyAllWindows()
-    
-    # Log performance stats
-    elapsed = time.time() - start_time
-    if frame_count > 0:
-        logger.info(f"Processed {frame_count} frames in {elapsed:.2f} seconds ({frame_count/elapsed:.2f} FPS)")
+        # Stop the servo and clean up
+        try:
+            requests.get(f"{SERVO_URL}/rotate?direction=right&speed=0", timeout=0.5)
+        except:
+            pass
+        camera.release()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()

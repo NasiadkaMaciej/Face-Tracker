@@ -24,10 +24,10 @@ void ServoWebServer::handleRotate() {
 	servoController->rotate();
 
 	if(speed == 0) {
-		server.send(200, "text/plain", "Servo stopped");
+		server.send(200, "text/plain", "Servo stopped\n");
 		servoController->stop();
 		return;
 	}
 
-	server.send(200, "text/plain", "Servo rotating " + direction + " at speed " + String(speed));
+	server.send(200, "text/plain", "Servo rotating " + direction + " at speed " + String(speed) + "\n");
 }
