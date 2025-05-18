@@ -1,34 +1,29 @@
 import cv2
 import logging
+import numpy as np
+from insightface.app import FaceAnalysis
 
 class FaceDetector:
-    """Class for detecting faces in images using various methods."""
+    """Class for detecting faces in images using InsightFace."""
     
-    def __init__(self, method='hog', min_confidence=0.5):
-        """Initialize face detector with specified method.
-        
-        'hog' or 'haar' detection method can be used with a confidence 
-        threshold between 0.0-1.0.
-        """
+    def __init__(self, method='insightface', min_confidence=0.5):
+        """Initialize face detector with specified method."""
         self.method = method
         self.min_confidence = min_confidence
         self.logger = logging.getLogger(__name__)
         
-        # Initialize the selected detector
-        if method == 'hog':
-            # HOG-based detector from dlib
-            import dlib
-            self.detector = dlib.get_frontal_face_detector()
-            self.logger.info("HOG face detector initialized")
-            
-        elif method == 'haar':
+        # Initialize InsightFace
+        self.face_app = FaceAnalysis(name='buffalo_l')
+        self.face_app.prepare(ctx_id=0, det_size=(640, 640))
+        
+        self.logger.info("InsightFace detector initialized")
+        
+        # Keep legacy methods for compatibility
+        if method == 'haar':
             # Haar cascade detector from OpenCV
             cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            self.detector = cv2.CascadeClassifier(cascade_path)
-            self.logger.info("Haar Cascade face detector initialized")
-        else:
-            self.logger.error(f"Unknown detection method: {method}")
-            raise ValueError(f"Unknown detection method: {method}")
+            self.haar_detector = cv2.CascadeClassifier(cascade_path)
+            self.logger.info("Haar Cascade face detector initialized as fallback")
     
     def detect_faces(self, image):
         """Detect faces in the input image and return list of face locations as (x, y, w, h) tuples."""
@@ -36,27 +31,31 @@ class FaceDetector:
             self.logger.error("Cannot detect faces in None image")
             return []
             
-        height, width = image.shape[:2]
         faces = []
         
         try:
-            if self.method == 'hog':
-                # HOG-based detection using dlib
-                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                dlib_detections = self.detector(rgb_image, 1)
+            if self.method == 'insightface':
+                # Use InsightFace for detection
+                insightface_detections = self.face_app.get(image)
                 
-                # Convert dlib detections to OpenCV format
-                for detection in dlib_detections:
-                    x = detection.left()
-                    y = detection.top()
-                    w = detection.right() - x
-                    h = detection.bottom() - y
+                # Convert InsightFace detections to (x, y, w, h) format
+                for face in insightface_detections:
+                    # Get bounding box coordinates (x1, y1, x2, y2)
+                    bbox = face.bbox.astype(int)
+                    x1, y1, x2, y2 = bbox
+                    
+                    # Convert to (x, y, w, h) format
+                    x = x1
+                    y = y1
+                    w = x2 - x1
+                    h = y2 - y1
+                    
                     faces.append((x, y, w, h))
                     
             elif self.method == 'haar':
-                # Haar cascade detection
+                # Fallback to Haar cascade detection
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                haar_detections = self.detector.detectMultiScale(
+                haar_detections = self.haar_detector.detectMultiScale(
                     gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
                 )
                 

@@ -4,7 +4,8 @@ import argparse
 import requests
 import threading
 from pathlib import Path
-import face_recognition  # Add this import
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 from src.face_detector import FaceDetector
 from src.face_recognizer import FaceRecognizer
@@ -25,7 +26,7 @@ DEADZONE = 30   # Pixels from center where we don't move the camera
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Face recognition and tracking system")
-    parser.add_argument("--detection-method", choices=["hog", "haar"], default="hog",
+    parser.add_argument("--detection-method", choices=["insightface", "haar"], default="insightface",
                         help="Face detection method to use")
     parser.add_argument("--database", help="Path to face recognition database")
     parser.add_argument("--camera-id", type=int, default=0, help="USB camera device ID (default: 0)")
@@ -96,8 +97,8 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     # Store recognized faces for display
     current_faces = []
     
-    # Store target encoding for comparison with unknown faces
-    target_encoding = None
+    # Store target embedding for comparison with unknown faces
+    target_embedding = None
     
     # Processing thread control
     processing = False
@@ -105,7 +106,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     latest_frame_lock = threading.Lock()
     
     def process_frame():
-        nonlocal processing, latest_frame, last_valid_position, current_faces, target_encoding
+        nonlocal processing, latest_frame, last_valid_position, current_faces, target_embedding
         
         try:
             # Grab the latest frame
@@ -132,17 +133,13 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                     target_face = None
                     unknown_faces = []
                     
-                    for x, y, w, h, name in recognized_faces:
+                    for x, y, w, h, name, face_obj in recognized_faces:
                         if name == target_name:
                             target_face = (x, y, w, h)
                             
-                            # Store target encoding if not already saved
-                            if target_encoding is None:
-                                face_img = frame_to_process[y:y+h, x:x+w]
-                                rgb_face = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-                                encodings = face_recognition.face_encodings(rgb_face)
-                                if encodings:
-                                    target_encoding = encodings[0]
+                            # Store target embedding if not already saved
+                            if target_embedding is None and face_obj is not None:
+                                target_embedding = face_obj.embedding
                             break
                         elif name == "Unknown":
                             # Store unknown faces for potential tracking
@@ -168,19 +165,19 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                         else:
                             # Multiple unknown faces, find the most similar to target
                             best_match_idx = 0
-                            lowest_distance = float('inf')
+                            highest_similarity = -1
                             
-                            if target_encoding is not None:
-                                # Compare each unknown face with the target encoding
+                            if target_embedding is not None:
+                                # Compare each unknown face with the target embedding
                                 for i, (x, y, w, h) in enumerate(unknown_faces):
                                     face_img = frame_to_process[y:y+h, x:x+w]
-                                    rgb_face = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-                                    encodings = face_recognition.face_encodings(rgb_face)
+                                    faces = face_recognizer.face_app.get(face_img)
                                     
-                                    if encodings:
-                                        distance = face_recognition.face_distance([target_encoding], encodings[0])[0]
-                                        if distance < lowest_distance:
-                                            lowest_distance = distance
+                                    if faces:
+                                        # Calculate similarity using cosine similarity
+                                        similarity = cosine_similarity([target_embedding], [faces[0].embedding])[0][0]
+                                        if similarity > highest_similarity:
+                                            highest_similarity = similarity
                                             best_match_idx = i
                             
                             # Track the most similar unknown face
@@ -224,8 +221,6 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             # Check for exit key
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-                
-            # Control frame rate
                 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

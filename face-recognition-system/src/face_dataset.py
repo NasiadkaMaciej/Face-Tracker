@@ -2,30 +2,32 @@ import cv2
 import numpy as np
 import logging
 from pathlib import Path
-import face_recognition
+from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
 class FaceDataset:
     def __init__(self, dataset_path):
         """Initialize face dataset processor with the dataset directory path."""
         self.dataset_path = Path(dataset_path)
-        self.images = []
-        self.encodings = []
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize InsightFace
+        self.face_app = FaceAnalysis(name='buffalo_l')
+        self.face_app.prepare(ctx_id=0, det_size=(640, 640))
         
         if not self.dataset_path.exists():
             self.logger.error(f"Dataset path does not exist: {dataset_path}")
             raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
     
     def load_data(self):
-        """Load images, extract face encodings, and get person names from the dataset.
-        Returns a dictionary with face encodings and corresponding names.
+        """Load images, extract face embeddings, and get person names from the dataset.
+        Returns a dictionary with face embeddings and corresponding names.
         """
         self.logger.info(f"Loading data from {self.dataset_path}")
         
         # Dictionary to store results
         data = {
-            "encodings": [],
+            "embeddings": [],
             "names": []
         }
         
@@ -61,28 +63,26 @@ class FaceDataset:
                         self.logger.warning(f"Could not load image: {image_file}")
                         continue
                         
-                    # Convert to RGB (face_recognition uses RGB)
-                    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    # Detect faces using InsightFace
+                    faces = self.face_app.get(image)
                     
-                    # Detect face locations
-                    face_locations = face_recognition.face_locations(rgb_image)
-                    
-                    if not face_locations:
+                    if not faces:
                         self.logger.warning(f"No face detected in {image_file}")
                         continue
                         
-                    # Get face encodings
-                    encodings = face_recognition.face_encodings(rgb_image, face_locations)
+                    # Only use the first face (most prominent)
+                    # InsightFace already returns the embedding
+                    face = faces[0]
+                    embedding = face.embedding
                     
-                    # Add encodings and name to results
-                    for encoding in encodings:
-                        data["encodings"].append(encoding)
-                        data["names"].append(person_name)
+                    # Add embedding and name to results
+                    data["embeddings"].append(embedding)
+                    data["names"].append(person_name)
                         
                 except Exception as e:
                     self.logger.error(f"Error processing {image_file}: {str(e)}")
         
-        self.logger.info(f"Dataset loaded: {len(data['encodings'])} face encodings from {len(set(data['names']))} persons")
+        self.logger.info(f"Dataset loaded: {len(data['embeddings'])} face embeddings from {len(set(data['names']))} persons")
         return data
     
     def add_person(self, name, images):
@@ -99,15 +99,14 @@ class FaceDataset:
         count = 0
         for i, image in enumerate(images):
             try:
-                # Ensure the image has at least one face
-                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                face_locations = face_recognition.face_locations(rgb_image)
+                # Detect faces using InsightFace
+                faces = self.face_app.get(image)
                 
-                if not face_locations:
+                if not faces:
                     self.logger.warning(f"No face found in image {i+1}")
                     continue
-                    
-                # Save the image
+                
+                # If face found, save the image
                 image_path = person_dir / f"{name}_{existing_images + count + 1}.jpg"
                 cv2.imwrite(str(image_path), image)
                 count += 1

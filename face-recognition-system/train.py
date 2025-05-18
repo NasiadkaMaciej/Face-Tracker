@@ -81,7 +81,7 @@ def create_dataset_interactive(dataset_dir, camera_id=0):
         cv2.destroyAllWindows()
         
     return person_name, images
-	
+    
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Train face recognition model")
@@ -118,8 +118,8 @@ def process_and_save_database(dataset_path, output_path=None):
     face_dataset = FaceDataset(dataset_path)
     data = face_dataset.load_data()
     
-    if not data["encodings"]:
-        logger.error("No face encodings found in dataset")
+    if not data["embeddings"]:
+        logger.error("No face embeddings found in dataset")
         return False
         
     # Create face recognizer and add faces
@@ -127,9 +127,9 @@ def process_and_save_database(dataset_path, output_path=None):
     database_path = output_path if output_path else Path("data/models/face_recognition_database.pkl")
     recognizer = FaceRecognizer(database_path=database_path)
     
-    # Add all faces to the recognizer
-    for encoding, name in zip(data["encodings"], data["names"]):
-        recognizer.add_face(name, encoding)
+	# Add each face to the recognizer
+    for embedding, name in zip(data["embeddings"], data["names"]):
+        recognizer.add_face(name, embedding)
     
     # Save the database with the correct path
     success = recognizer.save_database(database_path)
