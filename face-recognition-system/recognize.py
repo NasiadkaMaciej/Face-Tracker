@@ -17,11 +17,9 @@ logger = setup_logging("recognize")
 
 # ESP32 servo controller URL
 SERVO_URL = "http://192.168.4.1"
-MAX_SPEED = 500
-MIN_SPEED = 42  # Minimum speed to move the servo, depends on the servo
+MAX_SPEED = 1000
+MIN_SPEED = 42  # Minimum speed to move the servo
 DEADZONE = 30   # Pixels from center where we don't move the camera
-
-# These values will need adjusting based on camera and distance, lots of testing ahead
 
 def main():
     # Parse command-line arguments
@@ -74,28 +72,21 @@ def calculate_servo_command(face_center_x, frame_width):
 
 def control_servo(direction, speed):
     """Send control command to ESP32 servo controller."""
-    # Modified to handle speed=0 explicitly (stop command)
-    if direction is None:
-        return
-    
-    # Always send the command when the speed is 0 (explicit stop)
-    # or when speed is at least MIN_SPEED
-    if speed == 0 or speed >= MIN_SPEED:
-        try:
+    try:
+        # When direction is None, send a stop command
+        if direction is None:
+            url = f"{SERVO_URL}/rotate?direction=stop&speed=0"
+            requests.get(url, timeout=0.5)
+            logger.info("Sent stop command to servo")
+        else:
             url = f"{SERVO_URL}/rotate?direction={direction}&speed={speed}"
             requests.get(url, timeout=0.5)
             logger.info(f"Sent command: direction={direction}, speed={speed}")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send servo command: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to send servo command: {e}")
 
 def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     logger.info(f"Starting tracking system. {'Tracking: ' + target_name if target_name else 'No specific person tracking enabled'}. Press 'q' to quit.")
-    
-    # Store last valid face position to reduce jitter
-    last_valid_position = None
-    
-    # Store recognized faces for display
-    current_faces = []
     
     # Store target embedding for comparison with unknown faces
     target_embedding = None
@@ -104,9 +95,10 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     processing = False
     latest_frame = None
     latest_frame_lock = threading.Lock()
+    current_faces = []
     
     def process_frame():
-        nonlocal processing, latest_frame, last_valid_position, current_faces, target_embedding
+        nonlocal processing, latest_frame, current_faces, target_embedding
         
         try:
             # Grab the latest frame
@@ -120,79 +112,82 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             
             # Detect and recognize faces
             faces = face_detector.detect_faces(frame_to_process)
-            if faces:
-                recognized_faces = face_recognizer.recognize_faces(frame_to_process, faces)
-                current_faces = recognized_faces  # Update faces for display
+            
+            # Stop the servo if no faces detected
+            if not faces:
+                current_faces = []
+                control_servo(None, 0)  # Explicitly stop servo when no faces detected
+                processing = False
+                return
                 
-                # If no specific target is set, just display faces without tracking
-                if not target_name:
-                    # Don't send any tracking commands
-                    pass
+            recognized_faces = face_recognizer.recognize_faces(frame_to_process, faces)
+            current_faces = recognized_faces  # Update faces for display
+            
+            # If no specific target is set, just display faces without tracking
+            if not target_name:
+                processing = False
+                return
+            
+            # Original tracking logic when target is specified
+            target_face = None
+            unknown_faces = []
+            
+            for x, y, w, h, name, face_obj in recognized_faces:
+                if name == target_name:
+                    target_face = (x, y, w, h)
+                    
+                    # Store target embedding if not already saved
+                    if target_embedding is None and face_obj is not None:
+                        target_embedding = face_obj.embedding
+                    break
+                elif name == "Unknown":
+                    # Store unknown faces for potential tracking
+                    unknown_faces.append((x, y, w, h, face_obj))
+            
+            # If target found, track it (highest priority)
+            if target_face:
+                x, y, w, h = target_face
+                face_center_x = x + (w // 2)
+                direction, speed = calculate_servo_command(face_center_x, frame_width)
+                control_servo(direction, speed)
+                
+            # If target not found but unknown faces exist
+            elif unknown_faces:
+                if len(unknown_faces) == 1:
+                    # Only one unknown face, track it
+                    x, y, w, h, _ = unknown_faces[0]
+                    face_center_x = x + (w // 2)
+                    direction, speed = calculate_servo_command(face_center_x, frame_width)
+                    control_servo(direction, speed)
+                elif target_embedding is not None:
+                    # Multiple unknown faces, find the most similar to target
+                    best_match_idx = 0
+                    highest_similarity = -1
+                    
+                    # Compare each unknown face with the target embedding
+                    for i, (x, y, w, h, face_obj) in enumerate(unknown_faces):
+                        if face_obj and face_obj.embedding is not None:
+                            # Calculate similarity using cosine similarity
+                            similarity = cosine_similarity([target_embedding], [face_obj.embedding])[0][0]
+                            if similarity > highest_similarity:
+                                highest_similarity = similarity
+                                best_match_idx = i
+                    
+                    # Track the most similar unknown face
+                    x, y, w, h, _ = unknown_faces[best_match_idx]
+                    face_center_x = x + (w // 2)
+                    direction, speed = calculate_servo_command(face_center_x, frame_width)
+                    control_servo(direction, speed)
                 else:
-                    # Original tracking logic when target is specified
-                    target_face = None
-                    unknown_faces = []
-                    
-                    for x, y, w, h, name, face_obj in recognized_faces:
-                        if name == target_name:
-                            target_face = (x, y, w, h)
-                            
-                            # Store target embedding if not already saved
-                            if target_embedding is None and face_obj is not None:
-                                target_embedding = face_obj.embedding
-                            break
-                        elif name == "Unknown":
-                            # Store unknown faces for potential tracking
-                            unknown_faces.append((x, y, w, h))
-                    
-                    # If target found, track it (highest priority)
-                    if target_face:
-                        x, y, w, h = target_face
-                        face_center_x = x + (w // 2)
-                        last_valid_position = face_center_x
-                        direction, speed = calculate_servo_command(face_center_x, frame_width)
-                        control_servo(direction, speed)
-                        
-                    # If target not found but unknown faces exist
-                    elif unknown_faces:
-                        if len(unknown_faces) == 1:
-                            # Only one unknown face, track it
-                            x, y, w, h = unknown_faces[0]
-                            face_center_x = x + (w // 2)
-                            last_valid_position = face_center_x
-                            direction, speed = calculate_servo_command(face_center_x, frame_width)
-                            control_servo(direction, speed)
-                        else:
-                            # Multiple unknown faces, find the most similar to target
-                            best_match_idx = 0
-                            highest_similarity = -1
-                            
-                            if target_embedding is not None:
-                                # Compare each unknown face with the target embedding
-                                for i, (x, y, w, h) in enumerate(unknown_faces):
-                                    face_img = frame_to_process[y:y+h, x:x+w]
-                                    faces = face_recognizer.face_app.get(face_img)
-                                    
-                                    if faces:
-                                        # Calculate similarity using cosine similarity
-                                        similarity = cosine_similarity([target_embedding], [faces[0].embedding])[0][0]
-                                        if similarity > highest_similarity:
-                                            highest_similarity = similarity
-                                            best_match_idx = i
-                            
-                            # Track the most similar unknown face
-                            x, y, w, h = unknown_faces[best_match_idx]
-                            face_center_x = x + (w // 2)
-                            last_valid_position = face_center_x
-                            direction, speed = calculate_servo_command(face_center_x, frame_width)
-                            control_servo(direction, speed)
-                            
-                    elif last_valid_position:
-                        # No faces detected, continue in the last known direction at reduced speed
-                        direction, speed = calculate_servo_command(last_valid_position, frame_width)
-                        if speed > 0:
-                            speed = min(speed, 100)  # Reduce speed when tracking lost
-                            control_servo(direction, speed)
+                    # Just track the first unknown face if no target embedding
+                    x, y, w, h, _ = unknown_faces[0]
+                    face_center_x = x + (w // 2)
+                    direction, speed = calculate_servo_command(face_center_x, frame_width)
+                    control_servo(direction, speed)
+            else:
+                # No face to track, stop the servo
+                control_servo(None, 0)
+                
         finally:
             processing = False
     
@@ -202,6 +197,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             frame = camera.get_frame()
             if frame is None:
                 logger.warning("Could not capture frame")
+                time.sleep(0.1)
                 continue
             
             # Update the latest frame for processing
@@ -214,9 +210,10 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                 threading.Thread(target=process_frame).start()
             
             # Display the frame with marked faces
+            display_frame = frame.copy()
             if current_faces:
-                frame = face_recognizer.mark_faces(frame, current_faces)
-            cv2.imshow('Face Recognition', frame)
+                display_frame = face_recognizer.mark_faces(display_frame, current_faces)
+            cv2.imshow('Face Recognition', display_frame)
             
             # Check for exit key
             if cv2.waitKey(1) & 0xFF == ord('q'):
