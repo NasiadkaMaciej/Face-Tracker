@@ -1,3 +1,3 @@
 Recognize size face and apply speed?
-When no face, stop sending stop to servo
 Optimization: when target is found, search for it in narrowed down area in next frame
+Testing function - tests all combinations and logs stats and performance

@@ -44,6 +44,7 @@ class FaceRecognizer:
     def load_model(self):
         """Load the face recognition database and model if using ML methods."""
         try:
+            # Check if database exists
             if self.database_path and self.database_path.exists():
                 self.logger.info(f"Loading face database from {self.database_path}")
                 
@@ -53,20 +54,17 @@ class FaceRecognizer:
                     self.known_face_embeddings = data["embeddings"]
                     self.known_face_names = data["names"]
                 
-                # For ML-based methods, check if there's a trained model
+                # For ML-based methods, load the trained model and scaler
                 if self.recognition_method in self.classifiers:
-                    model_filename = f"{self.database_path.stem}_{self.recognition_method}_model.pkl"
-                    model_path = self.database_path.parent / model_filename
+                    model_path = self.database_path.parent / f"{self.database_path.stem}_{self.recognition_method}_model.pkl"
+                    scaler_path = self.database_path.parent / f"{self.database_path.stem}_scaler.pkl"
                     
-                    scaler_filename = f"{self.database_path.stem}_scaler.pkl"
-                    scaler_path = self.database_path.parent / scaler_filename
-                    
-                    # Load the model if it exists, otherwise train a new one
                     if model_path.exists() and scaler_path.exists():
                         self.model = joblib.load(model_path)
                         self.scaler = joblib.load(scaler_path)
                         self.logger.info(f"Loaded {self.recognition_method} model from {model_path}")
                     else:
+                        self.logger.warning(f"Model or scaler files not found for {self.recognition_method}")
                         return False
                 
                 self.logger.info(f"Loaded {len(self.known_face_embeddings)} face embeddings")
@@ -144,8 +142,9 @@ class FaceRecognizer:
             return "Unknown"
         
         try:
+            # Cosine similarity method
             if self.recognition_method == 'cosine':
-                # Calculate cosine similarity with known face embeddings
+                # Calculate similarity with known face embeddings
                 similarities = []
                 for emb in self.known_face_embeddings:
                     similarity = cosine_similarity([face_embedding], [emb])[0][0]
@@ -162,11 +161,12 @@ class FaceRecognizer:
                 
                 return "Unknown"
             
+            # ML-based methods (knn, naive_bayes, decision_tree, mlp, svm)
             elif self.recognition_method in self.classifiers and self.model is not None:
                 # Scale the embedding
                 scaled_embedding = self.scaler.transform([face_embedding])
                 
-                # Get prediction probabilities
+                # Get prediction probabilities if available
                 if hasattr(self.model, 'predict_proba'):
                     proba = self.model.predict_proba(scaled_embedding)[0]
                     max_proba = np.max(proba)
@@ -175,8 +175,7 @@ class FaceRecognizer:
                     if max_proba > self.unknown_threshold:
                         prediction = self.model.predict(scaled_embedding)[0]
                         return prediction
-                    else:
-                        return "Unknown"
+                    return "Unknown"
                 else:
                     # For models without probability estimation
                     prediction = self.model.predict(scaled_embedding)[0]
@@ -198,38 +197,27 @@ class FaceRecognizer:
             landmarks = face_obj.kps
             
             if landmarks is not None and landmarks.shape[0] >= 5:
+                # Define landmark colors
+                colors = [
+                    (255, 0, 0),    # Right eye (blue)
+                    (0, 255, 0),    # Left eye (green)
+                    (0, 255, 255),  # Nose (yellow)
+                    (255, 0, 255),  # Right mouth (magenta)
+                    (255, 0, 255)   # Left mouth (magenta)
+                ]
+                
                 # Draw landmarks
-                # InsightFace provides 5 points: left eye, right eye, nose, left mouth, right mouth
                 for i, (x, y) in enumerate(landmarks):
-                    color = (0, 255, 255)  # Yellow color for landmarks
-                    
-                    # Draw different colors based on feature type
-                    if i == 0:  # Right eye (from the person's perspective)
-                        color = (255, 0, 0)  # Blue
-                        cv2.circle(frame, (int(x), int(y)), 3, color, -1)
-                    elif i == 1:  # Left eye
-                        color = (0, 255, 0)  # Green
-                        cv2.circle(frame, (int(x), int(y)), 3, color, -1)
-                    elif i == 2:  # Nose
-                        color = (0, 255, 255)  # Yellow
-                        cv2.circle(frame, (int(x), int(y)), 3, color, -1)
-                    elif i == 3:  # Right mouth corner
-                        color = (255, 0, 255)  # Magenta
-                        cv2.circle(frame, (int(x), int(y)), 3, color, -1)
-                    elif i == 4:  # Left mouth corner
-                        color = (255, 0, 255)  # Magenta
-                        cv2.circle(frame, (int(x), int(y)), 3, color, -1)
+                    if i < len(colors):
+                        cv2.circle(frame, (int(x), int(y)), 3, colors[i], -1)
                 
                 # Connect mouth corners with a line
                 if landmarks.shape[0] >= 5:
+                    # Draw mouth line
                     cv2.line(frame, 
                             (int(landmarks[3][0]), int(landmarks[3][1])), 
                             (int(landmarks[4][0]), int(landmarks[4][1])), 
                             (255, 0, 255), 2)
-                    
-                    # Add "Mouth" label at the center of mouth line
-                    mouth_center_x = (landmarks[3][0] + landmarks[4][0]) // 2
-                    mouth_center_y = (landmarks[3][1] + landmarks[4][1]) // 2
         except Exception as e:
             self.logger.error(f"Error drawing facial landmarks: {str(e)}")
     
