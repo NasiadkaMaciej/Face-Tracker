@@ -1,3 +1,3 @@
-Add more detection methods (MTCNN, DNN)
-Implement data augmentation - distort/skew training images for diversity
-Research TensorFlow model for face recognition
+Recognize size face and apply speed?
+When no face, stop sending stop to servo
+Optimization: when target is found, search for it in narrowed down area in next frame

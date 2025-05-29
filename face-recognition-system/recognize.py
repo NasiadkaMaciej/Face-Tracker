@@ -24,12 +24,24 @@ DEADZONE = 30   # Pixels from center where we don't move the camera
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Face recognition and tracking system")
-    parser.add_argument("--detection-method", choices=["insightface", "haar"], default="insightface",
-                        help="Face detection method to use")
+    parser.add_argument("--detection-method", 
+                      choices=["insightface", "haar", "hog", "mediapipe"], 
+                      default="insightface",
+                      help="Face detection method to use")
+    parser.add_argument("--recognition-method", 
+                      choices=["cosine", "knn", "naive_bayes", "decision_tree", "mlp", "svm"], 
+                      default="cosine",
+                      help="Face recognition method to use")
     parser.add_argument("--database", help="Path to face recognition database")
     parser.add_argument("--camera-id", type=int, default=0, help="USB camera device ID (default: 0)")
     parser.add_argument("--target", default=None, help="Name of person to track (default: None - no specific tracking)")
+    parser.add_argument("--servo-url", default="http://192.168.4.1", 
+                      help="URL of the ESP32 servo controller")
     args = parser.parse_args()
+    
+    # Update global settings
+    global SERVO_URL
+    SERVO_URL = args.servo_url
     
     # Set up USB camera
     camera = USBCamera(device_id=args.camera_id)
@@ -40,9 +52,14 @@ def main():
     # Initialize face detector and recognizer
     face_detector = FaceDetector(method=args.detection_method)
     database_path = args.database or Path("data/models/face_recognition_database.pkl")
-    face_recognizer = FaceRecognizer(database_path=database_path)
+    face_recognizer = FaceRecognizer(database_path=database_path, 
+                                  recognition_method=args.recognition_method)
+    
     if not face_recognizer.load_model():
         logger.warning("Could not load face database. Faces will not be recognized.")
+    
+    logger.info(f"Using detection method: {args.detection_method}")
+    logger.info(f"Using recognition method: {args.recognition_method}")
     
     run_tracking_loop(camera, face_detector, face_recognizer, args.target)
 
@@ -131,18 +148,23 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             # Original tracking logic when target is specified
             target_face = None
             unknown_faces = []
+            recognized_non_target_faces = []  # New list for recognized faces that aren't the target
             
             for x, y, w, h, name, face_obj in recognized_faces:
                 if name == target_name:
-                    target_face = (x, y, w, h)
-                    
-                    # Store target embedding if not already saved
-                    if target_embedding is None and face_obj is not None:
-                        target_embedding = face_obj.embedding
-                    break
+                    # Store target face info but don't break, in case there are multiple matches
+                    if target_face is None:  # Take the first match, or you could use another criterion
+                        target_face = (x, y, w, h)
+                        
+                        # Store target embedding if not already saved
+                        if target_embedding is None and face_obj is not None:
+                            target_embedding = face_obj.embedding
                 elif name == "Unknown":
                     # Store unknown faces for potential tracking
                     unknown_faces.append((x, y, w, h, face_obj))
+                else:
+                    # Store other recognized faces that aren't the target
+                    recognized_non_target_faces.append((x, y, w, h, face_obj))
             
             # If target found, track it (highest priority)
             if target_face:

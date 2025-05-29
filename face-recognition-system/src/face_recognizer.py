@@ -6,30 +6,69 @@ from pathlib import Path
 from insightface.app import FaceAnalysis
 import insightface
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+import joblib
+import os
 
 class FaceRecognizer:
-    def __init__(self, model_path=None, database_path=None, unknown_threshold=0.6):
+    def __init__(self, model_path=None, database_path=None, recognition_method='cosine'):
         """Initialize face recognizer with model and database paths."""
         self.model_path = model_path
         self.database_path = Path(database_path) if database_path else None
-        self.unknown_threshold = unknown_threshold
+        self.unknown_threshold = 0.6
         self.known_face_embeddings = []
         self.known_face_names = []
         self.logger = logging.getLogger(__name__)
+        self.recognition_method = recognition_method
+        self.model = None
+        self.scaler = None
         
-        # Initialize InsightFace
+        # Initialize InsightFace for face embedding extraction
         self.face_app = FaceAnalysis(name='buffalo_l')
         self.face_app.prepare(ctx_id=0, det_size=(640, 640))
+        
+        # For methods that need a classifier
+        self.classifiers = {
+            'knn': KNeighborsClassifier(n_neighbors=5, weights='distance'),
+            'naive_bayes': GaussianNB(),
+            'decision_tree': DecisionTreeClassifier(max_depth=5),
+            'mlp': MLPClassifier(hidden_layer_sizes=(100,), max_iter=300),
+            'svm': SVC(kernel='linear', probability=True)
+        }
     
     def load_model(self):
-        """Load the face recognition database."""
+        """Load the face recognition database and model if using ML methods."""
         try:
             if self.database_path and self.database_path.exists():
                 self.logger.info(f"Loading face database from {self.database_path}")
+                
+                # Load embeddings and names for all methods
                 with open(self.database_path, 'rb') as f:
                     data = pickle.load(f)
                     self.known_face_embeddings = data["embeddings"]
                     self.known_face_names = data["names"]
+                
+                # For ML-based methods, check if there's a trained model
+                if self.recognition_method in self.classifiers:
+                    model_filename = f"{self.database_path.stem}_{self.recognition_method}_model.pkl"
+                    model_path = self.database_path.parent / model_filename
+                    
+                    scaler_filename = f"{self.database_path.stem}_scaler.pkl"
+                    scaler_path = self.database_path.parent / scaler_filename
+                    
+                    # Load the model if it exists, otherwise train a new one
+                    if model_path.exists() and scaler_path.exists():
+                        self.model = joblib.load(model_path)
+                        self.scaler = joblib.load(scaler_path)
+                        self.logger.info(f"Loaded {self.recognition_method} model from {model_path}")
+                    else:
+                        return False
+                
                 self.logger.info(f"Loaded {len(self.known_face_embeddings)} face embeddings")
                 return True
             else:
@@ -38,12 +77,12 @@ class FaceRecognizer:
         except Exception as e:
             self.logger.error(f"Error loading face recognition database: {str(e)}")
             return False
-
+    
     def recognize_faces(self, frame, face_locations):
         """Identify people in detected faces."""
         recognized_faces = []
         
-        # Use InsightFace to detect and recognize faces
+        # Use InsightFace to detect and get face embeddings
         faces = self.face_app.get(frame)
         
         # If face_locations were passed, we need to match them with InsightFace detections
@@ -105,20 +144,43 @@ class FaceRecognizer:
             return "Unknown"
         
         try:
-            # Calculate cosine similarity with known face embeddings
-            similarities = []
-            for emb in self.known_face_embeddings:
-                similarity = cosine_similarity([face_embedding], [emb])[0][0]
-                similarities.append(similarity)
-            
-            # Find the best match
-            if similarities:
-                best_match_index = np.argmax(similarities)
-                similarity_score = similarities[best_match_index]
+            if self.recognition_method == 'cosine':
+                # Calculate cosine similarity with known face embeddings
+                similarities = []
+                for emb in self.known_face_embeddings:
+                    similarity = cosine_similarity([face_embedding], [emb])[0][0]
+                    similarities.append(similarity)
                 
-                # If similarity is above threshold, return the name
-                if similarity_score > self.unknown_threshold:
-                    return self.known_face_names[best_match_index]
+                # Find the best match
+                if similarities:
+                    best_match_index = np.argmax(similarities)
+                    similarity_score = similarities[best_match_index]
+                    
+                    # If similarity is above threshold, return the name
+                    if similarity_score > self.unknown_threshold:
+                        return self.known_face_names[best_match_index]
+                
+                return "Unknown"
+            
+            elif self.recognition_method in self.classifiers and self.model is not None:
+                # Scale the embedding
+                scaled_embedding = self.scaler.transform([face_embedding])
+                
+                # Get prediction probabilities
+                if hasattr(self.model, 'predict_proba'):
+                    proba = self.model.predict_proba(scaled_embedding)[0]
+                    max_proba = np.max(proba)
+                    
+                    # Only trust prediction if probability is high enough
+                    if max_proba > self.unknown_threshold:
+                        prediction = self.model.predict(scaled_embedding)[0]
+                        return prediction
+                    else:
+                        return "Unknown"
+                else:
+                    # For models without probability estimation
+                    prediction = self.model.predict(scaled_embedding)[0]
+                    return prediction
             
             return "Unknown"
             
@@ -242,7 +304,6 @@ class FaceRecognizer:
         try:
             self.known_face_embeddings.append(face_embedding)
             self.known_face_names.append(name)
-            self.logger.info(f"Added face for {name}")
             return True
         except Exception as e:
             self.logger.error(f"Error adding face: {str(e)}")

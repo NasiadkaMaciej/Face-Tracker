@@ -19,7 +19,7 @@ class ServoController {
 
 	// Timing variables
 	unsigned long lastUpdateTime;
-	const int servoActiveSpeed = 10; // Fixed servo speed when moving
+	const int servoActiveSpeed = 15; // Fixed servo speed when moving
 	const unsigned long cycleTime = 100;
 
 	// Calculate if we should be moving at the current time based on duty cycle
