@@ -12,6 +12,9 @@ from src.face_recognizer import FaceRecognizer
 from src.usb_camera import USBCamera
 from src.utils import setup_logging
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="insightface.utils.transform")
+
 # Get logger
 logger = setup_logging("recognize")
 
@@ -87,18 +90,31 @@ def calculate_servo_command(face_center_x, frame_width):
     
     return direction, speed
 
+last_servo_command = {"direction": None, "speed": 0}
+
 def control_servo(direction, speed):
     """Send control command to ESP32 servo controller."""
+    global last_servo_command
+    
+    # Create current command
+    current_command = {"direction": direction, "speed": speed}
+    
+    # Skip if sending the same stop command again
+    if (direction is None or (direction and speed == 0)) and last_servo_command["speed"] == 0:
+        return
+        
     try:
         # When direction is None, send a stop command
         if direction is None:
             url = f"{SERVO_URL}/rotate?direction=stop&speed=0"
             requests.get(url, timeout=0.5)
             logger.info("Sent stop command to servo")
+            last_servo_command = {"direction": "stop", "speed": 0}
         else:
             url = f"{SERVO_URL}/rotate?direction={direction}&speed={speed}"
             requests.get(url, timeout=0.5)
             logger.info(f"Sent command: direction={direction}, speed={speed}")
+            last_servo_command = current_command
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to send servo command: {e}")
 
