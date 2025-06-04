@@ -35,6 +35,7 @@ class FaceDataset:
         """Load images, extract face embeddings, and get person names from the dataset.
         Returns a dictionary with face embeddings and corresponding names.
         If augment is True, apply data augmentation to increase dataset size.
+        Unknown faces from the Unknown directory are automatically included.
         """
         self.logger.info(f"Loading data from {self.dataset_path}")
         
@@ -47,6 +48,12 @@ class FaceDataset:
         # List all person directories
         person_dirs = [d for d in self.dataset_path.iterdir() if d.is_dir()]
         self.logger.info(f"Found {len(person_dirs)} persons in dataset")
+        
+        # Check for Unknown directory
+        unknown_dir = self.dataset_path / "Unknown"
+        has_unknown = unknown_dir.exists() and unknown_dir.is_dir()
+        if has_unknown:
+            self.logger.info("Found Unknown directory - will include in training")
         
         if not person_dirs:
             self.logger.warning(f"No person directories found in {self.dataset_path}")

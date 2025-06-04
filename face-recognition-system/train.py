@@ -104,7 +104,7 @@ def main():
     parser.add_argument("--dataset", help="Path to the dataset directory")
     parser.add_argument("--output", help="Output path for the trained model")
     parser.add_argument("--camera-id", type=int, default=0, help="USB camera device ID (default: 0)")
-    parser.add_argument("--augment", default=True, action="store_true", help="Apply data augmentation to increase dataset size")
+    parser.add_argument("--augment", default=False, action="store_true", help="Apply data augmentation to increase dataset size")
     args = parser.parse_args()
     
     # Determine paths
@@ -143,7 +143,17 @@ def process_and_save_database(dataset_path, output_path=None, augment=True):
     # Count persons and images
     person_dirs = [d for d in Path(dataset_path).iterdir() if d.is_dir()]
     logger.info(f"Found {len(person_dirs)} persons in dataset")
+
+    # Check for Unknown directory
+    unknown_dir = Path(dataset_path) / "Unknown"
+    has_unknown = unknown_dir.exists() and unknown_dir.is_dir()
     
+    if has_unknown:
+        unknown_images = list(unknown_dir.glob("*.jpg"))
+        unknown_count = len(unknown_images)
+        logger.info(f"Found {unknown_count} images in Unknown directory")
+        logger.info("Including Unknown faces in training to improve discrimination")
+
     total_images = 0
     for person_dir in person_dirs:
         person_name = person_dir.name
@@ -233,6 +243,8 @@ def process_and_save_database(dataset_path, output_path=None, augment=True):
     success = face_dataset.train_models(database_path)
     if success:
         logger.info("ML models trained and saved successfully")
+        if has_unknown:
+            logger.info("Models trained with Unknown samples to improve discrimination")
     else:
         logger.warning("Failed to train some ML models")
     
