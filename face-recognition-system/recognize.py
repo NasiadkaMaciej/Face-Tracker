@@ -5,7 +5,6 @@ import requests
 import threading
 from pathlib import Path
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 from src.face_detector import FaceDetector
 from src.face_recognizer import FaceRecognizer
@@ -32,8 +31,8 @@ def main():
                       default="insightface",
                       help="Face detection method to use")
     parser.add_argument("--recognition-method", 
-                      choices=["cosine", "knn", "naive_bayes", "decision_tree", "mlp", "svm"], 
-                      default="cosine",
+                      choices=["knn", "naive_bayes", "decision_tree", "mlp", "svm"], 
+                      default="knn",
                       help="Face recognition method to use")
     parser.add_argument("--database", help="Path to face recognition database")
     parser.add_argument("--camera-id", type=int, default=0, help="USB camera device ID (default: 0)")
@@ -193,31 +192,6 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             elif unknown_faces:
                 if len(unknown_faces) == 1:
                     # Only one unknown face, track it
-                    x, y, w, h, _ = unknown_faces[0]
-                    face_center_x = x + (w // 2)
-                    direction, speed = calculate_servo_command(face_center_x, frame_width)
-                    control_servo(direction, speed)
-                elif target_embedding is not None:
-                    # Multiple unknown faces, find the most similar to target
-                    best_match_idx = 0
-                    highest_similarity = -1
-                    
-                    # Compare each unknown face with the target embedding
-                    for i, (x, y, w, h, face_obj) in enumerate(unknown_faces):
-                        if face_obj and face_obj.embedding is not None:
-                            # Calculate similarity using cosine similarity
-                            similarity = cosine_similarity([target_embedding], [face_obj.embedding])[0][0]
-                            if similarity > highest_similarity:
-                                highest_similarity = similarity
-                                best_match_idx = i
-                    
-                    # Track the most similar unknown face
-                    x, y, w, h, _ = unknown_faces[best_match_idx]
-                    face_center_x = x + (w // 2)
-                    direction, speed = calculate_servo_command(face_center_x, frame_width)
-                    control_servo(direction, speed)
-                else:
-                    # Just track the first unknown face if no target embedding
                     x, y, w, h, _ = unknown_faces[0]
                     face_center_x = x + (w // 2)
                     direction, speed = calculate_servo_command(face_center_x, frame_width)

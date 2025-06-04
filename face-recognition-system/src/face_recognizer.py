@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 from insightface.app import FaceAnalysis
 import insightface
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
@@ -16,7 +15,7 @@ import joblib
 import os
 
 class FaceRecognizer:
-    def __init__(self, model_path=None, database_path=None, recognition_method='cosine'):
+    def __init__(self, model_path=None, database_path=None, recognition_method='knn'):
         """Initialize face recognizer with model and database paths."""
         self.model_path = model_path
         self.database_path = Path(database_path) if database_path else None
@@ -75,7 +74,7 @@ class FaceRecognizer:
         except Exception as e:
             self.logger.error(f"Error loading face recognition database: {str(e)}")
             return False
-    
+
     def recognize_faces(self, frame, face_locations):
         """Identify people in detected faces."""
         recognized_faces = []
@@ -142,27 +141,8 @@ class FaceRecognizer:
             return "Unknown"
         
         try:
-            # Cosine similarity method
-            if self.recognition_method == 'cosine':
-                # Calculate similarity with known face embeddings
-                similarities = []
-                for emb in self.known_face_embeddings:
-                    similarity = cosine_similarity([face_embedding], [emb])[0][0]
-                    similarities.append(similarity)
-                
-                # Find the best match
-                if similarities:
-                    best_match_index = np.argmax(similarities)
-                    similarity_score = similarities[best_match_index]
-                    
-                    # If similarity is above threshold, return the name
-                    if similarity_score > self.unknown_threshold:
-                        return self.known_face_names[best_match_index]
-                
-                return "Unknown"
-            
             # ML-based methods (knn, naive_bayes, decision_tree, mlp, svm)
-            elif self.recognition_method in self.classifiers and self.model is not None:
+            if self.recognition_method in self.classifiers and self.model is not None:
                 # Scale the embedding
                 scaled_embedding = self.scaler.transform([face_embedding])
                 

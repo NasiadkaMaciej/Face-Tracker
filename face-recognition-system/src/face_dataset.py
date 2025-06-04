@@ -223,13 +223,13 @@ class FaceDataset:
                 except Exception as e:
                     self.logger.error(f"Error training {method} model: {str(e)}")
         
-        # Also save the embeddings and names (for cosine similarity method)
+        # Also save the embeddings and names
         with open(database_path, 'wb') as f:
             pickle.dump(data, f)
         self.logger.info(f"Saved face embeddings to {database_path}")
         
         return True
-    
+
     def add_person(self, name, images):
         """Add a new person to the dataset. Takes the person's name and a list of images.
         Returns the number of successfully added face images.
