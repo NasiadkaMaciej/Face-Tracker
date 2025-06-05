@@ -129,8 +129,16 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     latest_frame_lock = threading.Lock()
     current_faces = []
     
+    # Performance tracking variables
+    start_time = time.time()
+    frame_count = 0
+    face_count = 0
+    last_fps_update = start_time
+    fps = 0
+    recognition_rate = 0
+    
     def process_frame():
-        nonlocal processing, latest_frame, current_faces, target_embedding
+        nonlocal processing, latest_frame, current_faces, target_embedding, face_count
         
         try:
             # Grab the latest frame
@@ -154,6 +162,9 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                 
             recognized_faces = face_recognizer.recognize_faces(frame_to_process, faces)
             current_faces = recognized_faces  # Update faces for display
+            
+            # Update face count for recognition rate calculation
+            face_count += len(recognized_faces)
             
             # If no specific target is set, just display faces without tracking
             if not target_name:
@@ -212,6 +223,25 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                 time.sleep(0.1)
                 continue
             
+            # Update frame count
+            frame_count += 1
+            
+            # Calculate FPS and recognition rate every second
+            current_time = time.time()
+            elapsed = current_time - last_fps_update
+            
+            if elapsed >= 1.0:  # Update every second
+                fps = frame_count / elapsed
+                recognition_rate = face_count / elapsed
+                
+                # Log to console
+                logger.info(f"FPS: {fps:.1f}, Recognitions/sec: {recognition_rate:.1f}")
+                
+                # Reset counters
+                last_fps_update = current_time
+                frame_count = 0
+                face_count = 0
+            
             # Update the latest frame for processing
             with latest_frame_lock:
                 latest_frame = frame
@@ -221,10 +251,17 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
                 processing = True
                 threading.Thread(target=process_frame).start()
             
-            # Display the frame with marked faces
+            # Display the frame with marked faces and performance metrics
             display_frame = frame.copy()
             if current_faces:
                 display_frame = face_recognizer.mark_faces(display_frame, current_faces)
+            
+            # Add performance metrics to display
+            cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(display_frame, f"Recognitions/sec: {recognition_rate:.1f}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
             cv2.imshow('Face Recognition', display_frame)
             
             # Check for exit key
