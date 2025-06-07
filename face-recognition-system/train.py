@@ -3,6 +3,8 @@ import argparse
 import cv2
 from pathlib import Path
 from collections import Counter
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="insightface.utils.transform")
 
 from src.face_dataset import FaceDataset
 from src.face_recognizer import FaceRecognizer
@@ -179,7 +181,6 @@ def process_and_save_database(dataset_path, output_path=None, augment=True):
         logger.info(f"This will multiply your dataset size by approximately 6x")
     else:
         logger.info("Data augmentation disabled. Processing original images only.")
-        expected_embeddings = total_images
     
     logger.info("=== Starting Face Feature Extraction ===")
     logger.info("This process includes:")

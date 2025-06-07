@@ -3,12 +3,10 @@ import numpy as np
 import logging
 from pathlib import Path
 from insightface.app import FaceAnalysis
-from tqdm import tqdm
 import random
 import joblib
 import pickle
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 
 # Include the classifiers we want to use
 from sklearn.neighbors import KNeighborsClassifier
@@ -65,7 +63,7 @@ class FaceDataset:
         log_interval = 10
         
         # Process each person directory
-        for person_dir in tqdm(person_dirs, desc="Processing faces"):
+        for person_dir in person_dirs:
             person_name = person_dir.name
             self.logger.info(f"Processing person: {person_name}")
             
@@ -229,35 +227,3 @@ class FaceDataset:
         self.logger.info(f"Saved face embeddings to {database_path}")
         
         return True
-
-    def add_person(self, name, images):
-        """Add a new person to the dataset. Takes the person's name and a list of images.
-        Returns the number of successfully added face images.
-        """
-        person_dir = self.dataset_path / name
-        person_dir.mkdir(exist_ok=True)
-        
-        # Count existing images
-        existing_images = len(list(person_dir.glob("*")))
-        
-        # Save new images
-        count = 0
-        for i, image in enumerate(images):
-            try:
-                # Detect faces using InsightFace
-                faces = self.face_app.get(image)
-                
-                if not faces:
-                    self.logger.warning(f"No face found in image {i+1}")
-                    continue
-                
-                # If face found, save the image
-                image_path = person_dir / f"{name}_{existing_images + count + 1}.jpg"
-                cv2.imwrite(str(image_path), image)
-                count += 1
-                    
-            except Exception as e:
-                self.logger.error(f"Error adding image {i+1}: {str(e)}")
-        
-        self.logger.info(f"Added {count} images for {name}")
-        return count

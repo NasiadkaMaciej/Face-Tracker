@@ -4,7 +4,6 @@ import pickle
 import logging
 from pathlib import Path
 from insightface.app import FaceAnalysis
-import insightface
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier

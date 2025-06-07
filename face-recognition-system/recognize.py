@@ -93,19 +93,9 @@ def control_servo(direction, speed):
     
     # Create current command
     current_command = {"direction": direction, "speed": speed}
-    
-    # Skip if sending the same stop command again
-    if (direction is None or (direction and speed == 0)) and last_servo_command["speed"] == 0:
+    if current_command == last_servo_command:
         return
-        
     try:
-        # When direction is None, send a stop command
-        if direction is None:
-            url = f"{SERVO_URL}/rotate?direction=stop&speed=0"
-            requests.get(url, timeout=0.5)
-            logger.info("Sent stop command to servo")
-            last_servo_command = {"direction": "stop", "speed": 0}
-        else:
             url = f"{SERVO_URL}/rotate?direction={direction}&speed={speed}"
             requests.get(url, timeout=0.5)
             logger.info(f"Sent command: direction={direction}, speed={speed}")
@@ -114,10 +104,7 @@ def control_servo(direction, speed):
         logger.error(f"Failed to send servo command: {e}")
 
 def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
-    logger.info(f"Starting tracking system. {'Tracking: ' + target_name if target_name else 'No specific person tracking enabled'}. Press 'q' to quit.")
-    
-    # Store target embedding for comparison with unknown faces
-    target_embedding = None
+    logger.info(f"Starting tracking system. {'Tracking: ' + target_name if target_name else 'No specific person tracking enabled'}")
     
     # Processing thread control
     processing = False
@@ -134,7 +121,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     recognition_rate = 0
     
     def process_frame():
-        nonlocal processing, latest_frame, current_faces, target_embedding, face_count
+        nonlocal processing, latest_frame, current_faces, face_count
         
         try:
             # Grab the latest frame
@@ -153,7 +140,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             # Stop the servo if no faces detected
             if not faces:
                 current_faces = []
-                control_servo(None, 0)  # Explicitly stop servo when no faces detected
+                control_servo("right", 0)  # Explicitly stop servo when no faces detected
                 processing = False
                 return
                 
@@ -163,50 +150,42 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             # Update face count for recognition rate calculation
             face_count += len(recognized_faces)
             
-            # If no specific target is set, just display faces without tracking
-            if not target_name:
-                processing = False
-                return
-            
-            # Original tracking logic when target is specified
+            # Tracking logic
             target_face = None
             unknown_faces = []
-            recognized_non_target_faces = []  # New list for recognized faces that aren't the target
+            known_faces = []
             
             for x, y, w, h, name, face_obj, prob in recognized_faces:
-                if name == target_name:
+                if target_name and name == target_name:
                     # Store target face info but don't break, in case there are multiple matches
-                    if target_face is None:  # Take the first match, or you could use another criterion
+                    if target_face is None:  # Take the first match
                         target_face = (x, y, w, h)
-                        
-                        # Store target embedding if not already saved
-                        if target_embedding is None and face_obj is not None:
-                            target_embedding = face_obj.embedding
                 elif name == "Unknown":
                     # Store unknown faces for potential tracking
                     unknown_faces.append((x, y, w, h, face_obj))
                 else:
-                    # Store other recognized faces that aren't the target
-                    recognized_non_target_faces.append((x, y, w, h, face_obj))
+                    # Store known faces (not the target but recognized)
+                    known_faces.append((x, y, w, h, face_obj))
             
-            # If target found, track it (highest priority)
+            # When target specified and on camera: follow that person
             if target_face:
                 x, y, w, h = target_face
                 face_center_x = x + (w // 2)
                 direction, speed = calculate_servo_command(face_center_x, frame_width)
                 control_servo(direction, speed)
                 
-            # If target not found but unknown faces exist
-            elif unknown_faces:
-                if len(unknown_faces) == 1:
-                    # Only one unknown face, track it
-                    x, y, w, h, _ = unknown_faces[0]
-                    face_center_x = x + (w // 2)
-                    direction, speed = calculate_servo_command(face_center_x, frame_width)
-                    control_servo(direction, speed)
+            # When no target specified, prioritize known faces over unknown
+            elif not target_name and known_faces:
+                # Follow the first known face when no specific target is given
+                x, y, w, h, _ = known_faces[0]
+                face_center_x = x + (w // 2)
+                direction, speed = calculate_servo_command(face_center_x, frame_width)
+                control_servo(direction, speed)
+                
+                
             else:
                 # No face to track, stop the servo
-                control_servo(None, 0)
+                control_servo("right", 0)
                 
         finally:
             processing = False
@@ -272,7 +251,8 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
     finally:
         # Stop the servo and clean up
         try:
-            requests.get(f"{SERVO_URL}/rotate?direction=right&speed=0", timeout=0.5)
+            control_servo("right", 0)
+            logger.info("Servo stopped during cleanup")
         except:
             pass
         camera.release()
