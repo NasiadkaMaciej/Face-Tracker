@@ -79,49 +79,18 @@ class FaceRecognizer:
         """Identify people in detected faces."""
         recognized_faces = []
         
-        # Use InsightFace to detect and get face embeddings
-        faces = self.face_app.get(frame)
-        
-        # If face_locations were passed, we need to match them with InsightFace detections
-        if face_locations and len(faces) > 0:
-            for (x, y, w, h) in face_locations:
-                best_match = None
-                best_iou = 0
-                
-                for face in faces:
-                    # Get bounding box from InsightFace (x1, y1, x2, y2)
-                    bbox = face.bbox.astype(int)
-                    fx1, fy1, fx2, fy2 = bbox
+        if face_locations:
+            for (x, y, w, h, face_obj) in face_locations:
+                try:
+                    # Use the embedding from the face object directly
+                    name, prob = self.recognize_face(face_obj.embedding)
                     
-                    # Calculate IoU between this face and the passed location
-                    # Convert x,y,w,h to x1,y1,x2,y2
-                    x1, y1, x2, y2 = x, y, x+w, y+h
-                    
-                    # Calculate intersection
-                    intersection_x1 = max(x1, fx1)
-                    intersection_y1 = max(y1, fy1)
-                    intersection_x2 = min(x2, fx2)
-                    intersection_y2 = min(y2, fy2)
-                    
-                    if intersection_x2 > intersection_x1 and intersection_y2 > intersection_y1:
-                        intersection_area = (intersection_x2 - intersection_x1) * (intersection_y2 - intersection_y1)
-                        box1_area = (x2 - x1) * (y2 - y1)
-                        box2_area = (fx2 - fx1) * (fy2 - fy1)
-                        union_area = box1_area + box2_area - intersection_area
-                        iou = intersection_area / union_area
-                        
-                        if iou > best_iou:
-                            best_iou = iou
-                            best_match = face
-                
-                if best_match and best_iou > 0.5:
-                    # Use the matched face for recognition
-                    name, prob = self.recognize_face(best_match.embedding)
                     # Include the entire face object to access landmarks later
-                    recognized_faces.append((x, y, w, h, name, best_match, prob))
-                else:
-                    recognized_faces.append((x, y, w, h, "Unknown", None, 0.0))
-                
+                    recognized_faces.append((x, y, w, h, name, face_obj, prob))
+                except Exception as e:
+                    self.logger.error(f"Error recognizing face: {str(e)}")
+                    recognized_faces.append((x, y, w, h, "Unknown", face_obj, 0.0))
+        
         return recognized_faces
 
     def recognize_face(self, face_embedding):

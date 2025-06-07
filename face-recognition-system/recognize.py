@@ -26,10 +26,6 @@ DEADZONE = 30   # Pixels from center where we don't move the camera
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Face recognition and tracking system")
-    parser.add_argument("--detection-method", 
-                      choices=["insightface", "haar", "hog", "mediapipe"], 
-                      default="insightface",
-                      help="Face detection method to use")
     parser.add_argument("--recognition-method", 
                       choices=["knn", "naive_bayes", "decision_tree", "mlp", "svm"], 
                       default="knn",
@@ -52,7 +48,7 @@ def main():
         return
     
     # Initialize face detector and recognizer
-    face_detector = FaceDetector(method=args.detection_method)
+    face_detector = FaceDetector()
     database_path = args.database or Path("data/models/face_recognition_database.pkl")
     face_recognizer = FaceRecognizer(database_path=database_path, 
                                   recognition_method=args.recognition_method)
@@ -60,7 +56,7 @@ def main():
     if not face_recognizer.load_model():
         logger.warning("Could not load face database. Faces will not be recognized.")
     
-    logger.info(f"Using detection method: {args.detection_method}")
+    logger.info(f"Using InsightFace for face detection")
     logger.info(f"Using recognition method: {args.recognition_method}")
     
     run_tracking_loop(camera, face_detector, face_recognizer, args.target)
@@ -153,6 +149,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             # Detect and recognize faces
             faces = face_detector.detect_faces(frame_to_process)
             
+
             # Stop the servo if no faces detected
             if not faces:
                 current_faces = []
