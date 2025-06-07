@@ -176,7 +176,7 @@ def run_tracking_loop(camera, face_detector, face_recognizer, target_name):
             unknown_faces = []
             recognized_non_target_faces = []  # New list for recognized faces that aren't the target
             
-            for x, y, w, h, name, face_obj in recognized_faces:
+            for x, y, w, h, name, face_obj, prob in recognized_faces:
                 if name == target_name:
                     # Store target face info but don't break, in case there are multiple matches
                     if target_face is None:  # Take the first match, or you could use another criterion

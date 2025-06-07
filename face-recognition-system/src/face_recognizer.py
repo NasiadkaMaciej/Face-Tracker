@@ -116,56 +116,40 @@ class FaceRecognizer:
                 
                 if best_match and best_iou > 0.5:
                     # Use the matched face for recognition
-                    name = self.recognize_face(best_match.embedding)
+                    name, prob = self.recognize_face(best_match.embedding)
                     # Include the entire face object to access landmarks later
-                    recognized_faces.append((x, y, w, h, name, best_match))
+                    recognized_faces.append((x, y, w, h, name, best_match, prob))
                 else:
-                    recognized_faces.append((x, y, w, h, "Unknown", None))
-        else:
-            # Use InsightFace detections directly
-            for face in faces:
-                bbox = face.bbox.astype(int)
-                x1, y1, x2, y2 = bbox
-                x, y, w, h = x1, y1, x2-x1, y2-y1
-                
-                name = self.recognize_face(face.embedding)
-                # Include the face object
-                recognized_faces.append((x, y, w, h, name, face))
+                    recognized_faces.append((x, y, w, h, "Unknown", None, 0.0))
                 
         return recognized_faces
 
     def recognize_face(self, face_embedding):
-        """Recognize a face embedding and return the name or 'Unknown'."""
-        if len(self.known_face_embeddings) == 0:
-            self.logger.warning("No known faces loaded, cannot recognize")
-            return "Unknown"
+        """Recognize a face embedding and return the name and probability."""
+        if not self.known_face_embeddings:
+            return "Unknown", 0.0
         
         try:
-            # ML-based methods (knn, naive_bayes, decision_tree, mlp, svm)
+            # ML-based methods
             if self.recognition_method in self.classifiers and self.model is not None:
                 # Scale the embedding
                 scaled_embedding = self.scaler.transform([face_embedding])
                 
-                # Get prediction probabilities if available
+                # Get prediction probabilities
                 if hasattr(self.model, 'predict_proba'):
                     proba = self.model.predict_proba(scaled_embedding)[0]
                     max_proba = np.max(proba)
                     
-                    # Only trust prediction if probability is high enough
                     if max_proba > self.unknown_threshold:
                         prediction = self.model.predict(scaled_embedding)[0]
-                        return prediction
-                    return "Unknown"
-                else:
-                    # For models without probability estimation
-                    prediction = self.model.predict(scaled_embedding)[0]
-                    return prediction
+                        return prediction, max_proba * 100
+                return "Unknown", 0.0
             
-            return "Unknown"
-            
+            return "Unknown", 0.0
+
         except Exception as e:
             self.logger.error(f"Error recognizing face: {str(e)}")
-            return "Error"
+            return "Error", 0.0
     
     def draw_facial_landmarks(self, frame, face_obj):
         """Draw facial landmarks (eyes, nose, mouth) on the frame."""
@@ -207,35 +191,26 @@ class FaceRecognizer:
         
         for face_data in face_locations:
             try:
-                # Check if we have face recognition data with landmarks
-                if len(face_data) == 6:
-                    # If we have recognition data with face object (x, y, w, h, name, face_obj)
-                    x, y, w, h, name, face_obj = face_data
+                # If we have recognition data with face object and probability (x, y, w, h, name, face_obj, prob)
+                x, y, w, h, name, face_obj, prob = face_data
+                
+                # Format the name with probability
+                if name != "Unknown":
+                    label = f"{name} ({prob:.1f}%)"
+                else:
+                    label = name
+                
+                # Draw rectangle with color based on recognition status
+                color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+                cv2.rectangle(marked_frame, (x, y), (x+w, y+h), color, 2)
+                
+                # Draw name label with probability
+                cv2.rectangle(marked_frame, (x, y+h), (x+w, y+h+30), color, cv2.FILLED)
+                cv2.putText(marked_frame, label, (x+6, y+h+25), 
+                        cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
+                
+                self.draw_facial_landmarks(marked_frame, face_obj)
                     
-                    # Draw rectangle with color based on recognition status
-                    color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-                    cv2.rectangle(marked_frame, (x, y), (x+w, y+h), color, 2)
-                    
-                    # Draw name label
-                    cv2.rectangle(marked_frame, (x, y+h), (x+w, y+h+30), color, cv2.FILLED)
-                    cv2.putText(marked_frame, name, (x+6, y+h+25), 
-                               cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
-                    
-                    # Draw facial landmarks if available
-                    self.draw_facial_landmarks(marked_frame, face_obj)
-                    
-                # For backward compatibility with old format (x, y, w, h, name)
-                elif len(face_data) == 5:
-                    x, y, w, h, name = face_data
-                    
-                    # Draw rectangle with color based on recognition status
-                    color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-                    cv2.rectangle(marked_frame, (x, y), (x+w, y+h), color, 2)
-                    
-                    # Draw name label
-                    cv2.rectangle(marked_frame, (x, y+h), (x+w, y+h+30), color, cv2.FILLED)
-                    cv2.putText(marked_frame, name, (x+6, y+h+25), 
-                               cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1)
             except Exception as e:
                 self.logger.error(f"Error marking face: {str(e)}")
         
