@@ -163,15 +163,9 @@ class FaceDataset:
             brightened = cv2.convertScaleAbs(image, alpha=alpha, beta=0)
             augmented.append(brightened)
             
-        # Add slight Gaussian blur
-        blurred = cv2.GaussianBlur(image, (5, 5), 0)
+        # Add Gaussian blur
+        blurred = cv2.GaussianBlur(image, (15, 15), 0)
         augmented.append(blurred)
-        
-        # Add slight noise
-        noisy = image.copy()
-        noise = np.random.normal(0, 10, image.shape).astype(np.uint8)
-        noisy = cv2.add(noisy, noise)
-        augmented.append(noisy)
         
         return augmented
         

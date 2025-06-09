@@ -176,9 +176,8 @@ def process_and_save_database(dataset_path, output_path=None, augment=True):
         logger.info("The following augmentations will be applied to each image:")
         logger.info("  - Small rotations (+/- 5 degrees)")
         logger.info("  - Brightness variations (darker/brighter)")
-        logger.info("  - Slight Gaussian blur")
-        logger.info("  - Random noise addition")
-        logger.info(f"This will multiply your dataset size by approximately 6x")
+        logger.info("  - Gaussian blur")
+        logger.info(f"This will multiply your dataset size by approximately 5 times")
     else:
         logger.info("Data augmentation disabled. Processing original images only.")
     
