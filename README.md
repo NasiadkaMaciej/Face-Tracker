@@ -118,13 +118,13 @@ After training, the following files are created in the `data/models/` directory:
 
 ### Recognition Methods Comparison
 
-| Method | Algorithm | Pros | Cons | Best For |
-|--------|-----------|------|------|----------|
-| **KNN** | K-Nearest Neighbors | Simple, effective | Memory-intensive | Default method |
-| **Naive Bayes** | Gaussian NB | Fast training/prediction | Assumes feature independence | Quick setup |
-| **Decision Tree** | Decision Tree | Interpretable | Can overfit | Interpretability |
-| **MLP** | Neural Network | Better with complex data | Slower training | Higher accuracy |
-| **SVM** | Support Vector Machine | Works in high dimensions | Slower with large datasets | Complex boundaries |
+| Model | Configuration | Strengths | Weaknesses |
+|-------|---------------|-----------|------------|
+| K-Nearest Neighbors (KNN) | n_neighbors=5, weights='distance' | Simple, intuitive, works well with small datasets | Slow on large datasets, sensitive to irrelevant features |
+| Naive Bayes | GaussianNB (default) | Fast training, handles high dimensionality well | Assumes feature independence (often violated in face data) |
+| Decision Tree | max_depth=5 | Interpretable, handles non-linear data | Prone to overfitting, unstable with small data changes |
+| Multi-Layer Perceptron (MLP) | hidden_layer_sizes=(100,), max_iter=300 | Captures complex patterns, non-linear | Sensitive to feature scaling, requires more data |
+| Support Vector Machine (SVM) | kernel='linear', probability=True | Works well in high dimensions, robust | Slow training with large datasets, sensitive to parameters |
 
 ## Technical Details
 
