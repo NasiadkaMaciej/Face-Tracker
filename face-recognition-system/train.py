@@ -240,7 +240,7 @@ def process_and_save_database(dataset_path, output_path=None, augment=True):
         logger.error("Failed to save face recognition database")
 
     logger.info("=== Training Machine Learning Models ===")
-    success = face_dataset.train_models(database_path)
+    success = face_dataset.train_models(database_path, preloaded_data=data, augment=augment)
     if success:
         logger.info("ML models trained and saved successfully")
         if has_unknown:

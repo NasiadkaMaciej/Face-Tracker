@@ -169,10 +169,9 @@ class FaceDataset:
         
         return augmented
         
-    def train_models(self, database_path, methods=['knn', 'naive_bayes', 'decision_tree', 'mlp', 'svm']):
+    def train_models(self, database_path, methods=['knn', 'naive_bayes', 'decision_tree', 'mlp', 'svm'], preloaded_data=None, augment = false):
         """Train multiple recognition models on the dataset."""
-        # Load the data
-        data = self.load_data(augment=True)  # Use augmentation for better training
+        data = preloaded_data if preloaded_data else self.load_data(augment=augment)
         
         if not data["embeddings"]:
             self.logger.error("No face embeddings found in dataset")
