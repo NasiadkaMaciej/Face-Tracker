@@ -106,21 +106,15 @@ class FaceRecognizer:
                 # Get prediction probabilities
                 if hasattr(self.model, 'predict_proba'):
                     proba = self.model.predict_proba(scaled_embedding)[0]
-                    prediction_idx = np.argmax(proba)
-                    prediction = self.model.classes_[prediction_idx]
-                    confidence = proba[prediction_idx] * 100
+                    max_proba = np.max(proba)
                     
-                    # If model predicts "Unknown" or confidence is too low, return Unknown
-                    if prediction == "Unknown" or confidence < self.unknown_threshold * 100:
-                        return "Unknown", confidence
-                    
-                    return prediction, confidence
-                
-                # For models without predict_proba
-                prediction = self.model.predict(scaled_embedding)[0]
-                return prediction, 100.0
-                
+                    if max_proba > self.unknown_threshold:
+                        prediction = self.model.predict(scaled_embedding)[0]
+                        return prediction, max_proba * 100
+                return "Unknown", 0.0
+            
             return "Unknown", 0.0
+
         except Exception as e:
             self.logger.error(f"Error recognizing face: {str(e)}")
             return "Error", 0.0
