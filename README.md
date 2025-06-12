@@ -116,18 +116,6 @@ After training, the following files are created in the `data/models/` directory:
    - Names and confidence scores are displayed
    - Facial landmarks are highlighted
 
-### Recognition Methods Comparison
-
-| Model | Configuration | Strengths | Weaknesses |
-|-------|---------------|-----------|------------|
-| K-Nearest Neighbors (KNN) | n_neighbors=5, weights='distance' | Simple, intuitive, works well with small datasets | Slow on large datasets, sensitive to irrelevant features |
-| Naive Bayes | GaussianNB (default) | Fast training, handles high dimensionality well | Assumes feature independence (often violated in face data) |
-| Decision Tree | max_depth=5 | Interpretable, handles non-linear data | Prone to overfitting, unstable with small data changes |
-| Multi-Layer Perceptron (MLP) | hidden_layer_sizes=(100,), max_iter=300 | Captures complex patterns, non-linear | Sensitive to feature scaling, requires more data |
-| Support Vector Machine (SVM) | kernel='linear', probability=True | Works well in high dimensions, robust | Slow training with large datasets, sensitive to parameters |
-
-## Technical Details
-
 ### InsightFace Integration
 
 InsightFace is used for both face detection and embedding extraction:
