@@ -18,13 +18,12 @@ class FaceRecognizer:
         """Initialize face recognizer with model and database paths."""
         self.model_path = model_path
         self.database_path = Path(database_path) if database_path else None
-        self.unknown_threshold = 0.9
+        self.unknown_threshold = 0.8
         self.known_face_embeddings = []
         self.known_face_names = []
         self.logger = logging.getLogger(__name__)
         self.recognition_method = recognition_method
         self.model = None
-        self.scaler = None
         
         # Initialize InsightFace for face embedding extraction
         self.face_app = FaceAnalysis(name='buffalo_l')
@@ -52,17 +51,15 @@ class FaceRecognizer:
                     self.known_face_embeddings = data["embeddings"]
                     self.known_face_names = data["names"]
                 
-                # For ML-based methods, load the trained model and scaler
+                # For ML-based methods, load the trained model
                 if self.recognition_method in self.classifiers:
                     model_path = self.database_path.parent / f"{self.database_path.stem}_{self.recognition_method}_model.pkl"
-                    scaler_path = self.database_path.parent / f"{self.database_path.stem}_scaler.pkl"
                     
-                    if model_path.exists() and scaler_path.exists():
+                    if model_path.exists():
                         self.model = joblib.load(model_path)
-                        self.scaler = joblib.load(scaler_path)
                         self.logger.info(f"Loaded {self.recognition_method} model from {model_path}")
                     else:
-                        self.logger.warning(f"Model or scaler files not found for {self.recognition_method}")
+                        self.logger.warning(f"Model file not found for {self.recognition_method}")
                         return False
                 
                 self.logger.info(f"Loaded {len(self.known_face_embeddings)} face embeddings")
@@ -100,16 +97,16 @@ class FaceRecognizer:
         try:
             # ML-based methods
             if self.recognition_method in self.classifiers and self.model is not None:
-                # Scale the embedding
-                scaled_embedding = self.scaler.transform([face_embedding])
+                # Use embedding directly without scaling
+                embedding_for_prediction = [face_embedding]
                 
                 # Get prediction probabilities
                 if hasattr(self.model, 'predict_proba'):
-                    proba = self.model.predict_proba(scaled_embedding)[0]
+                    proba = self.model.predict_proba(embedding_for_prediction)[0]
                     max_proba = np.max(proba)
                     
                     if max_proba > self.unknown_threshold:
-                        prediction = self.model.predict(scaled_embedding)[0]
+                        prediction = self.model.predict(embedding_for_prediction)[0]
                         return prediction, max_proba * 100
                 return "Unknown", 0.0
             

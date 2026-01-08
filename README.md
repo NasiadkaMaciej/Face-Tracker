@@ -1,192 +1,156 @@
-# Face Recognition and Tracking System
 
-This project implements a face recognition system with optional tracking capabilities. The system uses machine learning to identify individuals in real-time video feeds.
 
-## Overview
+# Face Recognition and Turntable Tracking System
 
-The core system uses a camera to detect and recognize faces in real-time. It can be extended with a motorized camera mount for automatic tracking, keeping targetted faces centered in the frame.
+An advanced, modular system for real-time face recognition and automatic face tracking using a motorized turntable. The project combines machine learning, computer vision, and embedded hardware to keep faces centered in the camera view by physically moving the camera mount.
 
-## Features
+---
 
-- **High-Accuracy Face Detection**: Using InsightFace for reliable face detection
-- **Multiple Recognition Methods**: KNN, Naive Bayes, Decision Tree, SVM, MLP
-- **Interactive Training**: Simple camera-based training interface
-- **Data Augmentation**: Enhances training data for better recognition
-- **Performance Metrics**: Real-time FPS and recognition rate display
-- **Optional Tracking**: Can be connected to a motorized mount (requires additional hardware)
+## 🚀 Project Summary
 
-## Installation
+This project detects and recognizes faces in real-time video streams using state-of-the-art machine learning models. It features a motorized turntable (servo-driven, ESP32-controlled) that automatically rotates to follow and center faces in the camera view. The system is designed for extensibility, performance, and ease of use, and demonstrates the integration of software and hardware for intelligent movement and tracking.
 
-1. Install required Python packages:
-```bash
-pip install opencv-python numpy insightface scikit-learn requests tqdm onnxruntime
+---
+
+## 🏁 Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install opencv-python numpy insightface scikit-learn requests tqdm onnxruntime
+   ```
+2. **Prepare data:**
+   - Create a directory: `data/known_faces`
+   - Add subfolders for each person, with their face images inside
+3. **Train models:**
+   ```bash
+   python train.py --interactive
+   ```
+4. **Run recognition and tracking:**
+   ```bash
+   python recognize.py --recognition-method knn --target "Person Name"
+   ```
+5. *(Optional)* **Enable tracking hardware:**
+   ```bash
+   cd esp32-servo-controller
+   pio run -t upload
+   ```
+
+---
+
+## 📁 Project Structure
+
+
+```
+face-recognition-system/
+   train.py, recognize.py         # Main scripts
+   src/                          # Core modules (dataset, detector, recognizer, utils)
+   data/
+      known_faces/                # Training images (per person)
+      ...                         # Model outputs, embeddings, etc.
+esp32-servo-controller/         # Firmware for camera tracking hardware
 ```
 
-2. Create a `data/known_faces` directory to store training images.
+---
 
-3. For tracking functionality (optional):
-```bash
-cd esp32-servo-controller
-pio run -t upload
-```
+## 🖼️ Hardware & Program Overview
 
-## Training Process
+| Electronic Schema | Turntable Photo |
+|-------------------|----------------|
+| ![Schema](https://nasiadka.pl/project/face-recognition-and-tracking-system/electronic_circuit.jpg) | ![Turntable](https://nasiadka.pl/project/face-recognition-and-tracking-system/main_picture.jpg) |
 
-### Overview
+**Turntable Hardware:**
+- The turntable is powered by a servo motor and controlled by an ESP32 microcontroller running a web server.
+- The camera is mounted on the turntable, allowing it to rotate horizontally to follow faces.
+- The ESP32 receives movement commands from the recognition software over Wi-Fi (HTTP requests), adjusting the turntable position in real time.
 
-The training process involves capturing face images, extracting facial features, and training multiple machine learning models for comparison.
+**Tracking Logic:**
+1. The recognition software detects faces and identifies the target person in each frame.
+2. The position of the target face is compared to the center of the camera frame.
+3. If the face is off-center (outside a deadzone), the software calculates the direction and speed needed to re-center the face.
+4. An HTTP command is sent to the ESP32 controller, which rotates the turntable accordingly.
+5. The ESP32 servo controller receives the command, sets the servo speed and direction, and moves the turntable.
+6. This closed-loop system keeps the target face centered automatically.
 
-### Step-by-Step Process
 
-1. **Data Collection**:
-   - Images are captured using the train.py script with the `--interactive` flag
-   - Each person gets their own directory in `data/known_faces/{person_name}`
-   - Capture multiple images from different angles for better recognition
+---
 
-```bash
-python train.py --interactive
-```
+## ✨ Features
 
-2. **Face Feature Extraction**:
-   - InsightFace detects faces in the training images
-   - 512-dimensional embeddings are extracted for each face
-   - These embeddings represent unique facial characteristics
+- **High-accuracy face detection** (InsightFace)
+- **Multiple recognition methods:** KNN, Naive Bayes, Decision Tree, SVM, MLP
+- **Interactive training** with camera
+- **Data augmentation** (rotation, brightness, blur)
+- **Real-time performance metrics** (FPS, recognition rate)
+- **Automatic turntable movement:** Motorized camera mount rotates to follow faces
+- **Closed-loop face tracking:** Keeps target centered using live feedback
+- **ESP32-based servo controller:** Fast, wireless hardware integration
 
-3. **Data Augmentation**:
-   - Original images are transformed to create additional training data:
-   - Rotations (±5 degrees)
-   - Brightness variations (80% and 120%)
-   - Gaussian blur
-   - This increases the dataset size by 5 times
+---
 
-4. **Model Training**:
-   - Features are standardized using `StandardScaler`
-   - Multiple classification models are trained:
-     - K-Nearest Neighbors (KNN)
-     - Naive Bayes
-     - Decision Tree
-     - Multi-layer Perceptron (MLP)
-     - Support Vector Machine (SVM)
+## 🧑‍💻 Training Process
 
-5. **Database Creation**:
-   - Face embeddings and person names are saved to a database
-   - Each model is saved separately along with the feature scaler
+1. **Data Collection:**
+   - Use `train.py --interactive` to capture images with the camera, or use existing images.
+   - Each person: `data/known_faces/{person_name}`
+2. **Face Detection & Embedding:**
+   - InsightFace detects faces and extracts 512D embeddings for each face.
+3. **Data Augmentation:**
+   - Images are rotated, brightness-adjusted, and blurred to increase dataset size and robustness.
+4. **Model Training:**
+   - Embeddings and names are collected.
+   - Multiple classifiers (KNN, Naive Bayes, Decision Tree, MLP, SVM) are trained.
+   - Models and scaler are saved for later use.
 
-### Improving Recognition with Unknown Faces
+---
 
-As more unknown faces are added to the training set:
-- Recognition confidence thresholds become more meaningful
-- False positive rates decrease
-- The system becomes more selective in identification
+## 🕵️ Recognition & Tracking
 
-### Saved Files
+1. **Camera & Initialization:**
+   - USB camera is initialized and frames are captured.
+   - Face detector and recognition model are loaded.
+2. **Frame Processing:**
+   - Frames are processed in real time, in a separate thread for performance.
+   - Performance metrics (FPS, recognition rate) are calculated.
+3. **Face Detection & Recognition:**
+   - Faces are detected and embeddings extracted.
+   - Each face is recognized using the selected model; confidence scores are calculated.
+   - Bounding boxes, names, and facial landmarks are drawn on the frame.
+4. **Turntable Tracking Logic:**
+   - If a target person is specified, their position is tracked.
+   - The position of the target face is compared to the center of the frame.
+   - If the face is off-center (outside a deadzone), the direction and speed for the turntable are calculated.
+   - An HTTP command is sent to the ESP32 controller to rotate the turntable and re-center the face.
+   - The ESP32 receives the command and moves the servo accordingly.
+   - This allows for hands-free, automatic following of people, ideal for security, robotics, or interactive installations.
 
-After training, the following files are created in the `data/models/` directory:
+---
 
-- `face_recognition_database.pkl`: Primary database with embeddings and names
-- `face_recognition_database_scaler.pkl`: StandardScaler for feature normalization
-- Model files for each classifier (KNN, Naive Bayes, Decision Tree, MLP, SVM)
 
-## Recognition and Tracking Process
+---
 
-### Main Recognition Loop
+## ⚙️ Command-Line Usage
 
-1. **Initialization**:
-   - Camera connection is established
-   - Face detector is initialized (InsightFace)
-   - Recognition model is loaded based on selected method
-
-2. **Frame Processing**:
-   - Frames are captured from the camera
-   - Processing happens in a separate thread for better performance
-   - Performance metrics (FPS, recognition rate) are calculated
-
-3. **Face Detection**:
-   - InsightFace locates faces in each frame
-   - Returns bounding boxes and face embeddings
-   - Also provides facial landmarks (eyes, nose, mouth)
-
-4. **Face Recognition**:
-   - Face embeddings are passed to the selected ML model
-   - Model predicts identity with confidence score
-   - If confidence is below threshold, face is marked as "Unknown"
-
-5. **Display**:
-   - Recognized faces are marked with bounding boxes
-   - Names and confidence scores are displayed
-   - Facial landmarks are highlighted
-
-### InsightFace Integration
-
-InsightFace is used for both face detection and embedding extraction:
-
-```python
-# Initialization
-face_app = FaceAnalysis(name='buffalo_l')
-face_app.prepare(ctx_id=0, det_size=(640, 640))
-
-# Detection and embedding extraction
-faces = face_app.get(image)
-for face in faces:
-    embedding = face.embedding  # 512-dimensional vector
-    bbox = face.bbox  # Bounding box coordinates
-    landmarks = face.kps  # Facial landmarks
-```
-
-## Data Storage Format
-
-The face recognition system stores face data in a pickle file with the following structure:
-
-```python
-{
-    "embeddings": [array1, array2, ...],  # List of numpy arrays (512-dimensional face embeddings)
-    "names": ["person1", "person2", ...]  # Corresponding person names
-}
-```
-
-Each trained machine learning model is stored in a separate file with the naming convention:
-```
-face_recognition_database_<method>.pkl
-```
-
-Additionally, a scaler model is saved to standardize feature values:
-```
-face_recognition_database_scaler.pkl
-```
-
-## Usage
-
-### Training Face Recognition
-
+**Train interactively:**
 ```bash
 python train.py --interactive
 ```
-
-Follow the prompts to capture face images. Move your head to different positions for better training results.
-
-### Training on already existing files
-
+**Train on existing files:**
 ```bash
 python train.py
 ```
-
-You can also use `--augment` parameter to augment photos (both interactive and existing)
-
-### Running Face Recognition
-
+**Augment data:**
+```bash
+python train.py --augment
+```
+**Run recognition:**
 ```bash
 python recognize.py --recognition-method knn --target "Person Name"
 ```
-
-Command line options:
-- `--recognition-method`: Choose from knn, naive_bayes, decision_tree, mlp, svm
-- `--target`: Name of the person to track (optional)
-- `--camera-id`: USB camera device ID (default: 0)
-
-### Tracking Functionality (Optional)
-
-If you've set up the hardware for tracking:
-
+**Tracking (optional):**
 ```bash
 python recognize.py --recognition-method knn --target "Person Name" --servo-url http://192.168.4.1
 ```
+
+## 📄 License
+
+This project is open source. See `LICENSE` for details.

@@ -169,7 +169,7 @@ class FaceDataset:
         
         return augmented
         
-    def train_models(self, database_path, methods=['knn', 'naive_bayes', 'decision_tree', 'mlp', 'svm'], preloaded_data=None, augment = false):
+    def train_models(self, database_path, methods=['knn', 'naive_bayes', 'decision_tree', 'mlp', 'svm'], preloaded_data=None, augment=False):
         """Train multiple recognition models on the dataset."""
         data = preloaded_data if preloaded_data else self.load_data(augment=augment)
         
@@ -180,15 +180,9 @@ class FaceDataset:
         # Get the base database path without extension
         base_path = Path(database_path).with_suffix('')
         
-        # Scale the data
-        scaler = StandardScaler()
-        X = scaler.fit_transform(data["embeddings"])
+        # Use embeddings directly without scaling
+        X = data["embeddings"]
         y = data["names"]
-        
-        # Save the scaler
-        scaler_path = f"{base_path}_scaler.pkl"
-        joblib.dump(scaler, scaler_path)
-        self.logger.info(f"Saved feature scaler to {scaler_path}")
         
         # Dictionary of classifiers
         classifiers = {
